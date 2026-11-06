@@ -11,6 +11,7 @@ CONF_DE_PIN = "de_pin"
 CONF_SHELLY_IP = "shelly_ip"
 CONF_BATTERY_CAPACITY = "battery_capacity"
 CONF_LOOP_INTERVAL = "loop_interval"
+CONF_BATTERY_INT_RESISTANCE = "battery_internal_resistance"
 
 CONFIG_SCHEMA = cv.Schema(
     {
@@ -20,6 +21,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_SHELLY_IP, default=""): cv.string,
         cv.Optional(CONF_BATTERY_CAPACITY, default=305.0): cv.float_,
         cv.Optional(CONF_LOOP_INTERVAL, default=5000): cv.uint32_t,
+        cv.Optional(CONF_BATTERY_INT_RESISTANCE, default=0.017): cv.float_,
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -35,3 +37,4 @@ async def to_code(config):
     cg.add(var.set_shelly_ip(config[CONF_SHELLY_IP]))
     cg.add(var.set_battery_capacity(config[CONF_BATTERY_CAPACITY]))
     cg.add(var.set_loop_interval(config[CONF_LOOP_INTERVAL]))
+    cg.add(var.set_battery_internal_resistance(config[CONF_BATTERY_INT_RESISTANCE]))

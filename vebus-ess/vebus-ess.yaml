@@ -43,9 +43,10 @@ vebus:
   id: vebus_hub
   uart_id: ve_uart
   de_pin: GPIO4
-  shelly_ip: "192.168.178.47"   # Shelly 3EM, leer lassen wenn extern gesetzt
-  battery_capacity: 305         # Ah
-  loop_interval: 5000           # ms, Kontrollintervall
+  shelly_ip: "192.168.178.47"         # Shelly 3EM, leer lassen wenn extern gesetzt
+  battery_capacity: 305               # Ah
+  loop_interval: 5000                 # ms, Kontrollintervall
+  battery_internal_resistance: 0.017  # Batterie Innenwiderstand in Ω
 
 sensor:
   - platform: template
@@ -83,6 +84,15 @@ sensor:
     accuracy_decimals: 1
     update_interval: 5s
     lambda: return id(vebus_hub).get_dc_current();
+
+  - platform: template
+    name: "Temperatur"
+    unit_of_measurement: "°C"
+    device_class: temperature
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 5s
+    lambda: return id(vebus_hub).get_temp();
 
   - platform: template
     name: "SoC"
