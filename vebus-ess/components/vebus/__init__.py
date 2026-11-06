@@ -2,6 +2,7 @@ import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome import pins
 from esphome.components import uart
+from esphome.const import CONF_ID, CONF_UART_ID
 
 vebus_ns = cg.esphome_ns.namespace("vebus")
 VebusHub = vebus_ns.class_("VebusHub", cg.Component)
@@ -14,7 +15,7 @@ CONF_LOOP_INTERVAL = "loop_interval"
 CONFIG_SCHEMA = cv.Schema(
     {
         cv.GenerateID(): cv.declare_id(VebusHub),
-        cv.Required("uart_id"): cv.use_id(uart.UARTComponent),
+        cv.Required(CONF_UART_ID): cv.use_id(uart.UARTComponent),
         cv.Optional(CONF_DE_PIN): pins.internal_gpio_output_pin_schema,
         cv.Optional(CONF_SHELLY_IP, default=""): cv.string,
         cv.Optional(CONF_BATTERY_CAPACITY, default=305.0): cv.float_,
@@ -26,7 +27,7 @@ CONFIG_SCHEMA = cv.Schema(
 async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
-    paren = await cg.get_variable(config["uart_id"])
+    paren = await cg.get_variable(config[CONF_UART_ID])
     cg.add(var.set_uart_parent(paren))
     if CONF_DE_PIN in config:
         pin = await cg.gpio_pin_expression(config[CONF_DE_PIN])

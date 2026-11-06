@@ -2,7 +2,7 @@
 
 #include "esphome/core/component.h"
 #include "esphome/core/gpio.h"
-#include "esphome/components/uart/uart_device.h"
+#include "esphome/components/uart/uart.h"
 
 namespace esphome {
 namespace vebus {

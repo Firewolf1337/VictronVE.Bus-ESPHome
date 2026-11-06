@@ -1,12 +1,35 @@
 #include "vebus.h"
 #include "esphome/core/log.h"
-#include <HTTPClient.h>
+#include "lwip/sockets.h"
+#include "lwip/inet.h"
+#include <errno.h>
+#include <fcntl.h>
+#include <string.h>
 #include <algorithm>
 
 namespace esphome {
 namespace vebus {
 
 static const char *TAG = "vebus";
+
+// IP-String (a.b.c.d) in numerische Form wandeln, host byte order
+static uint32_t parse_ip(const std::string &s) {
+  uint32_t ip = 0;
+  int part = 0;
+  uint32_t v = 0;
+  for (char c : s) {
+    if (c >= '0' && c <= '9') {
+      v = v * 10 + (c - '0');
+    } else if (c == '.') {
+      ip |= v << (8 * part++);
+      v = 0;
+    } else {
+      break;
+    }
+  }
+  ip |= v << (8 * part);
+  return ip;
+}
 
 void VebusHub::setup() {
   if (this->de_pin_ != nullptr) {
@@ -259,24 +282,87 @@ void VebusHub::loop() {
 bool VebusHub::fetch_shelly() {
   if (this->shelly_ip_.empty())
     return false;
-  HTTPClient http;
-  String url = "http://" + String(this->shelly_ip_.c_str()) + "/status";
-  if (!http.begin(url))
+
+  struct sockaddr_in addr;
+  memset(&addr, 0, sizeof(addr));
+  addr.sin_family = AF_INET;
+  addr.sin_port = htons(80);
+  addr.sin_addr.s_addr = htonl(parse_ip(this->shelly_ip_));
+
+  int fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (fd < 0)
     return false;
-  int code = http.GET();
-  if (code != 200) {
-    http.end();
+  fcntl(fd, F_SETFL, O_NONBLOCK);
+
+  // Verbindung (nichtblockierend mit Timeout)
+  int r = connect(fd, (struct sockaddr *) &addr, sizeof(addr));
+  if (r != 0 && errno != EINPROGRESS) {
+    close(fd);
     this->shelly_fail_++;
     return false;
   }
-  String body = http.getString();
-  http.end();
-  int idx = body.indexOf("\"total_power\":");
-  if (idx < 0) {
+  uint32_t start = millis();
+  bool connected = (r == 0);
+  while (!connected && millis() - start < 1000) {
+    fd_set wset;
+    FD_ZERO(&wset);
+    FD_SET(fd, &wset);
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 100000;
+    if (select(fd + 1, nullptr, &wset, nullptr, &tv) > 0) {
+      int err = 0;
+      socklen_t len = sizeof(err);
+      getsockopt(fd, SOL_SOCKET, SO_ERROR, &err, &len);
+      connected = (err == 0);
+      break;
+    }
+  }
+  if (!connected) {
+    close(fd);
     this->shelly_fail_++;
     return false;
   }
-  this->meter_power_ = body.substring(idx + 14).toInt();
+
+  // HTTP-GET senden
+  std::string req = "GET /status HTTP/1.0\r\nHost: " + this->shelly_ip_ + "\r\n\r\n";
+  const char *p = req.c_str();
+  size_t left = req.size();
+  while (left > 0) {
+    int n = send(fd, p, left, 0);
+    if (n <= 0)
+      break;
+    p += n;
+    left -= n;
+  }
+
+  // Antwort lesen
+  std::string body;
+  char buf[512];
+  start = millis();
+  while (millis() - start < 1000) {
+    fd_set rset;
+    FD_ZERO(&rset);
+    FD_SET(fd, &rset);
+    struct timeval tv;
+    tv.tv_sec = 0;
+    tv.tv_usec = 100000;
+    int s = select(fd + 1, &rset, nullptr, nullptr, &tv);
+    if (s == 0)
+      continue;
+    int n = recv(fd, buf, sizeof(buf), 0);
+    if (n <= 0)
+      break;
+    body.append(buf, n);
+  }
+  close(fd);
+
+  size_t idx = body.find("\"total_power\":");
+  if (idx == std::string::npos) {
+    this->shelly_fail_++;
+    return false;
+  }
+  this->meter_power_ = atoi(body.c_str() + idx + 14);
   return true;
 }
 
