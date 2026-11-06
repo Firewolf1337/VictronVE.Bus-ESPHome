@@ -1,0 +1,185 @@
+substitutions:
+  name: vebus-ess
+  friendly: "Victron VE.Bus ESS"
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly}
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+external_components:
+  - source:
+      type: local
+      path: components
+
+logger:
+  level: INFO
+
+api:
+  encryption:
+    key: !secret api_key
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: "${name} Fallback"
+
+uart:
+  - id: ve_uart
+    rx_pin: GPIO16
+    tx_pin: GPIO17
+    baud_rate: 256000
+    rx_buffer_size: 256
+
+vebus:
+  id: vebus_hub
+  uart_id: ve_uart
+  de_pin: GPIO4
+  shelly_ip: "192.168.178.47"   # Shelly 3EM, leer lassen wenn extern gesetzt
+  battery_capacity: 305         # Ah
+  loop_interval: 5000           # ms, Kontrollintervall
+
+sensor:
+  - platform: template
+    name: "Batteriespannung"
+    unit_of_measurement: "V"
+    device_class: voltage
+    state_class: measurement
+    accuracy_decimals: 2
+    update_interval: 5s
+    lambda: return id(vebus_hub).get_bat_voltage();
+
+  - platform: template
+    name: "Geschätzte Spannung"
+    unit_of_measurement: "V"
+    device_class: voltage
+    state_class: measurement
+    accuracy_decimals: 2
+    update_interval: 5s
+    lambda: return id(vebus_hub).get_est_voltage();
+
+  - platform: template
+    name: "AC Leistung"
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: return id(vebus_hub).get_ac_power();
+
+  - platform: template
+    name: "DC Strom"
+    unit_of_measurement: "A"
+    device_class: current
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 5s
+    lambda: return id(vebus_hub).get_dc_current();
+
+  - platform: template
+    name: "SoC"
+    unit_of_measurement: "%"
+    device_class: battery
+    state_class: measurement
+    accuracy_decimals: 1
+    update_interval: 5s
+    lambda: return id(vebus_hub).get_soc_percent();
+
+  - platform: template
+    name: "Netzleistung (Shelly)"
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: return id(vebus_hub).get_meter_power();
+
+  - platform: template
+    name: "ESS Leistung"
+    unit_of_measurement: "W"
+    device_class: power
+    state_class: measurement
+    accuracy_decimals: 0
+    update_interval: 5s
+    lambda: return id(vebus_hub).get_ess_power();
+
+binary_sensor:
+  - platform: template
+    name: "VE.Bus Sync"
+    lambda: return id(vebus_hub).get_sync();
+
+  - platform: template
+    name: "Batterie niedrig"
+    lambda: return id(vebus_hub).get_bat_low();
+
+  - platform: template
+    name: "Batterie voll"
+    lambda: return id(vebus_hub).get_bat_high();
+
+switch:
+  # Ein/Ausschalten des Wechselrichters (Wakeup/Sleep über VE.Bus)
+  - platform: template
+    name: "Wechselrichter"
+    id: sw_inverter
+    lambda: return id(vebus_hub).get_inverter_on();
+    turn_on_action:
+      - lambda: id(vebus_hub).set_inverter_on(true);
+    turn_off_action:
+      - lambda: id(vebus_hub).set_inverter_on(false);
+
+  - platform: template
+    name: "Auto Modus (Net-Zero)"
+    id: sw_auto
+    lambda: return id(vebus_hub).get_auto_mode();
+    turn_on_action:
+      - lambda: id(vebus_hub).set_auto_mode(true);
+    turn_off_action:
+      - lambda: id(vebus_hub).set_auto_mode(false);
+
+  - platform: template
+    name: "Nur Laden"
+    id: sw_chgonly
+    lambda: return id(vebus_hub).get_chg_only();
+    turn_on_action:
+      - lambda: id(vebus_hub).set_chg_only(true);
+    turn_off_action:
+      - lambda: id(vebus_hub).set_chg_only(false);
+
+  - platform: template
+    name: "Auto Aufwachen"
+    id: sw_autowakeup
+    lambda: return id(vebus_hub).get_auto_wakeup();
+    turn_on_action:
+      - lambda: id(vebus_hub).set_auto_wakeup(true);
+    turn_off_action:
+      - lambda: id(vebus_hub).set_auto_wakeup(false);
+
+number:
+  # Manuelle Leistungsvorgabe (deaktiviert Auto-Modus)
+  - platform: template
+    name: "ESS Leistungsvorgabe"
+    id: num_ess
+    min_value: -1875
+    max_value: 1875
+    step: 25
+    initial_value: 0
+    optimistic: true
+    mode: box
+    unit_of_measurement: "W"
+    on_value:
+      then:
+        - lambda: id(vebus_hub).set_ess_power((int) x);
+
+button:
+  - platform: template
+    name: "SoC zurücksetzen (50%)"
+    on_press:
+      - lambda: id(vebus_hub).reset_soc(50.0f);
